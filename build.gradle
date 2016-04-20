@@ -1,0 +1,49 @@
+group 'com.nts'
+version '1.0-SNAPSHOT'
+
+apply plugin: 'java'
+
+defaultTasks 'clean', 'build'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+configurations {
+    sbe
+}
+
+sourceCompatibility = 1.8
+targetCompatibility = 1.8
+
+[compileJava, compileTestJava]*.options*.encoding = 'UTF-8'
+
+dependencies {
+    compile files('build/classes/generated') {
+        builtBy 'compileGeneratedJava'
+    }
+    compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.21'
+    compile group: 'io.aeron', name: 'aeron-all', version: '0.9.5'
+    //compile group: 'com.lmax', name: 'disruptor', version: '3.3.4'
+    compile group: 'uk.co.real-logic', name: 'sbe-all', version: '1.3.5-RC3'
+    runtime group: 'ch.qos.logback', name: 'logback-classic', version: '1.1.7'
+    runtime group: 'org.agrona', name: 'Agrona', version: '0.4.13'
+    testCompile group: 'junit', name: 'junit', version: '4.11'
+    sbe group: 'uk.co.real-logic', name: 'sbe-all', version: '1.3.5-RC3'
+}
+
+sourceSets {
+    generated.java.srcDir 'build/generated'
+}
+
+compileGeneratedJava.dependsOn 'generateSbeClasses'
+compileGeneratedJava.classpath += configurations.sbe
+compileJava.dependsOn 'compileGeneratedJava'
+
+task(generateSbeClasses, type:JavaExec) {
+    main = 'uk.co.real_logic.sbe.SbeTool'
+    classpath = configurations.sbe
+    args "src/main/resources/rft.xml"
+    systemProperty 'sbe.output.dir', "build/generated"
+}

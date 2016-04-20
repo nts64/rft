@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<sbe:messageSchema xmlns:sbe="http://fixprotocol.io/sbe/rc4"
+                   package="com.nts.rft.sbe"
+                   id="1"
+                   version="1"
+                   semanticVersion="5.2"
+                   description="Rft schema"
+                   byteOrder="littleEndian">
+    <types>
+        <composite name="messageHeader" description="Message identifiers and length of message root">
+            <type name="blockLength" primitiveType="uint16"/>
+            <type name="templateId" primitiveType="uint16"/>
+            <type name="schemaId" primitiveType="uint16"/>
+            <type name="version" primitiveType="uint16"/>
+        </composite>
+        <composite name="groupSizeEncoding" description="Repeating group dimensions">
+            <type name="blockLength" primitiveType="uint16"/>
+            <type name="numInGroup" primitiveType="uint16"/>
+        </composite>
+        <composite name="varDataEncoding">
+            <type name="length" primitiveType="uint16"/>
+            <type name="varData" primitiveType="uint8" length="0" characterEncoding="UTF-8"/>
+        </composite>
+    </types>
+    <types>
+        <type name="Term" primitiveType="uint64"/>
+        <type name="NodeId" primitiveType="uint8"/>
+        <type name="LogIndex" primitiveType="uint64"/>
+        <enum name="BooleanType" encodingType="uint8">
+            <validValue name="False">0</validValue>
+            <validValue name="True">1</validValue>
+        </enum>
+    </types>
+    
+    
+    <sbe:message name="RequestVote" id="1">
+        <field name="term" id="2" type="Term"/>
+        <field name="candidateId" id="3" type="NodeId"/>
+        <field name="lastLogIndex" id="4" type="LogIndex"/>
+        <field name="lastLogTerm" id="5" type="Term"/>
+    </sbe:message>
+    <sbe:message name="RequestVoteResponse" id="6">
+        <field name="term" id="7" type="Term"/>
+        <field name="voteGranted" id="8" type="BooleanType"/>
+    </sbe:message>
+    <sbe:message name="AppendEntries" id="9">
+        <field name="term" id="10" type="Term"/>
+        <field name="leaderId" id="11" type="NodeId"/>
+        <field name="prevLogIndex" id="12" type="LogIndex"/>
+        <field name="prevLogTerm" id="13" type="Term"/>
+        <field name="leaderCommit" id="14" type="LogIndex"/>
+        <group name="entries" id="15" dimensionType="groupSizeEncoding">
+            <data name="entry" id="16" type="varDataEncoding"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="AppendEntriesResponse" id="17">
+        <field name="term" id="18" type="Term"/>
+        <field name="success" id="19" type="BooleanType"/>
+    </sbe:message>
+</sbe:messageSchema>
