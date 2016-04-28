@@ -31,6 +31,11 @@
             <validValue name="True">1</validValue>
         </enum>
     </types>
+    <types>
+        <type name="CorrelationId" primitiveType="uint64"/>
+        <type name="AccountId" primitiveType="uint64"/>
+        <type name="Amount" primitiveType="uint64"/>
+    </types>
     
     
     <sbe:message name="RequestVote" id="1">
@@ -50,11 +55,41 @@
         <field name="prevLogTerm" id="13" type="Term"/>
         <field name="leaderCommit" id="14" type="LogIndex"/>
         <group name="entries" id="15" dimensionType="groupSizeEncoding">
-            <data name="entry" id="16" type="varDataEncoding"/>
+            <field name="creditAccount" id="16" type="AccountId"/>
+            <field name="debitAccount" id="17" type="AccountId"/>
+            <field name="amount" id="18" type="Amount"/>
         </group>
     </sbe:message>
-    <sbe:message name="AppendEntriesResponse" id="17">
-        <field name="term" id="18" type="Term"/>
-        <field name="success" id="19" type="BooleanType"/>
+    <sbe:message name="AppendEntriesResponse" id="19">
+        <field name="term" id="20" type="Term"/>
+        <field name="success" id="21" type="BooleanType"/>
     </sbe:message>
+
+    <sbe:message name="ClientConnect" id="22">
+        <data name="clientChannel" id="23" type="varDataEncoding"/>
+    </sbe:message>
+    <sbe:message name="ClientResponse" id="24">
+        <field name="leaderId" id="25" type="NodeId"/>
+    </sbe:message>
+
+
+    <sbe:message name="BalanceRequest" id="101">
+        <field name="correlationId" id="102" type="CorrelationId"/>
+        <field name="account" id="103" type="AccountId"/>
+    </sbe:message>
+    <sbe:message name="BalanceResponse" id="104">
+        <field name="correlationId" id="105" type="CorrelationId"/>
+        <field name="amount" id="106" type="Amount"/>
+    </sbe:message>
+    <sbe:message name="TransactionRequest" id="107">
+        <field name="correlationId" id="108" type="CorrelationId"/>
+        <field name="creditAccount" id="109" type="AccountId"/>
+        <field name="debitAccount" id="110" type="AccountId"/>
+        <field name="amount" id="111" type="Amount"/>
+    </sbe:message>
+    <sbe:message name="TransactionResponse" id="112">
+        <field name="correlationId" id="113" type="CorrelationId"/>
+        <field name="success" id="114" type="BooleanType"/>
+    </sbe:message>
+
 </sbe:messageSchema>

@@ -19,14 +19,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static com.nts.rft.Settings.LOG_TIME_ENABLED;
-import static com.nts.rft.Settings.LOG_TRACE_ENABLED;
-import static com.nts.rft.Settings.LOG_WARN_ENABLED;
+import static com.nts.rft.Settings.*;
 
 class Server  {
     private static final Logger logger = LoggerFactory.getLogger(Server.class);
 
-    private static String[] EMPTY = new String[0];
+    private static Transaction[] EMPTY = new Transaction[0];
     private final Worker worker = new Worker();
 
     private Messaging messaging;
@@ -62,6 +60,7 @@ class Server  {
         messaging.close();
     }
 
+    //Server message processor
     private void processRequestVote(RequestVoteDecoder decoder) {
         logEntry("processRequestVote");
         checkCurrentTerm(decoder.term());
@@ -88,6 +87,7 @@ class Server  {
         logExit();
     }
 
+    //Server message processor
     private void processRequestVoteResponse(RequestVoteResponseDecoder decoder) {
         logEntry("processRequestVoteResponse");
         checkCurrentTerm(decoder.term());
@@ -113,6 +113,7 @@ class Server  {
         logExit();
     }
 
+    //Server message processor
     private void processAppendEntries(AppendEntriesDecoder decoder) {
         logEntry("processAppendEntries");
         checkCurrentTerm(decoder.term());
@@ -129,6 +130,19 @@ class Server  {
                 break;
             case follower:
                 trace("AppendEntries received by follower");
+                AppendEntriesDecoder.EntriesDecoder entries = decoder.entries();
+                int count = entries.count();
+
+                Transaction[] data = new Transaction[count];
+                int index = 0;
+                for (AppendEntriesDecoder.EntriesDecoder entriesDecoder : entries) {
+                    data[index] = new Transaction();
+                    data[index].creditAccount = entriesDecoder.creditAccount();
+                    data[index].debitAccount = entriesDecoder.debitAccount();
+                    data[index].amount = entriesDecoder.amount();
+                    index++;
+                }
+
                 resetElectionTimeout();
                 sender.sendAppendEntriesResponse(decoder.leaderId(), currentTerm, true);
                 break;
@@ -136,12 +150,14 @@ class Server  {
         logExit();
     }
 
+    //Server message processor
     private void processAppendEntriesResponse(AppendEntriesResponseDecoder decoder) {
         logEntry("processAppendEntriesResponse");
         checkCurrentTerm(decoder.term());
         logExit();
     }
 
+    //Timeout processor
     private void processElectionTimeout() {
         logEntry("processElectionTimeout");
         switch (currentState) {
@@ -168,6 +184,7 @@ class Server  {
         logExit();
     }
 
+    //Timeout processor
     private void processHeartbeatTimeout() {
         logEntry("processHeartbeatTimeout");
         assert currentState == State.leader;
@@ -175,11 +192,32 @@ class Server  {
         logExit();
     }
 
+    //Client message processor
+    private void processClientConnect(ClientConnectDecoder decoder, int sessionId) {
+        //TODO
+        String clientChannel = decoder.clientChannel();
+        if (currentState == State.leader) {
+
+        } else {
+
+        }
+    }
+
+    //Client message processor
+    private void processBalanceRequest(BalanceRequestDecoder decoder, int sessionId) {
+        //TODO
+    }
+
+    //Client message processor
+    private void processTransactionRequest(TransactionRequestDecoder decoder, int sessionId) {
+        //TODO
+    }
+
     private void sendHeartbeat() {
         sendAppendEntriesRequest(EMPTY);
     }
 
-    private void sendAppendEntriesRequest(String[] entries) {
+    private void sendAppendEntriesRequest(Transaction[] entries) {
         sender.sendAppendEntries(currentTerm, settings.id, 0, 0, entries, 0);
         resetHeartbeatTimeout();
     }
@@ -240,13 +278,19 @@ class Server  {
 
     private class Receiver {
         final List<Subscription> subscriptions;
-        final FragmentHandler fragmentHandler;
+        final Subscription clientSubscription;
+        final FragmentHandler serverMessageHandler;
+        final FragmentHandler clientMessageHandler;
 
         final MessageHeaderDecoder messageHeader = new MessageHeaderDecoder();
         final RequestVoteDecoder requestVote = new RequestVoteDecoder();
         final RequestVoteResponseDecoder requestVoteResponse = new RequestVoteResponseDecoder();
         final AppendEntriesDecoder appendEntries = new AppendEntriesDecoder();
         final AppendEntriesResponseDecoder appendEntriesResponse = new AppendEntriesResponseDecoder();
+
+        final ClientConnectDecoder clientConnect = new ClientConnectDecoder();
+        final BalanceRequestDecoder balanceRequest = new BalanceRequestDecoder();
+        final TransactionRequestDecoder transactionRequest = new TransactionRequestDecoder();
 
         Receiver(Aeron aeron) {
             subscriptions = new ArrayList<>(settings.clusterSize - 1);
@@ -260,7 +304,7 @@ class Server  {
                 Subscription subscription = aeron.addSubscription(channel, stream_id);
                 subscriptions.add(subscription);
             }
-            fragmentHandler = (buffer, offset, length, header) -> {
+            serverMessageHandler = (buffer, offset, length, header) -> {
                 messageHeader.wrap(buffer, offset);
                 switch (messageHeader.templateId()) {
                     case RequestVoteDecoder.TEMPLATE_ID:
@@ -280,7 +324,28 @@ class Server  {
                         processAppendEntriesResponse(appendEntriesResponse);
                         break;
                     default:
-                        warn("Unsupported message with template id: {}", this.messageHeader.templateId());
+                        warn("Unsupported message with template id: {}", messageHeader.templateId());
+                }
+            };
+
+            clientSubscription = aeron.addSubscription(settings.clientChannelPrefix + settings.id, settings.id);
+            clientMessageHandler = (buffer, offset, length, header) -> {
+                messageHeader.wrap(buffer, offset);
+                switch (messageHeader.templateId()) {
+                    case ClientConnectDecoder.TEMPLATE_ID:
+                        clientConnect.wrap(buffer, offset + messageHeader.encodedLength(), messageHeader.blockLength(), 0);
+                        processClientConnect(clientConnect, header.sessionId());
+                        break;
+                    case BalanceRequestDecoder.TEMPLATE_ID:
+                        balanceRequest.wrap(buffer, offset + messageHeader.encodedLength(), messageHeader.blockLength(), 0);
+                        processBalanceRequest(balanceRequest, header.sessionId());
+                        break;
+                    case TransactionRequestDecoder.TEMPLATE_ID:
+                        transactionRequest.wrap(buffer, offset + messageHeader.encodedLength(), messageHeader.blockLength(), 0);
+                        processTransactionRequest(transactionRequest, header.sessionId());
+                        break;
+                    default:
+                        warn("Unsupported client message with template id: {}", messageHeader.templateId());
                 }
             };
         }
@@ -288,7 +353,7 @@ class Server  {
         int checkForMessages() {
             int result = 0;
             for (Subscription subscription : subscriptions) {
-                result += subscription.poll(fragmentHandler, 256);
+                result += subscription.poll(serverMessageHandler, 256);
             }
             return result;
         }
@@ -312,6 +377,10 @@ class Server  {
 
         Sender sender() {
             return new Sender(aeron);
+        }
+
+        ClientSender clientSender(String channel) {
+            return new ClientSender(aeron, channel);
         }
 
         void close() {
@@ -372,7 +441,7 @@ class Server  {
             send(publicationFor(candidateId), length);
         }
 
-        void sendAppendEntries(long term, int leaderId, long previousLogIndex, long previousLogTerm, String[] entries, long leaderCommit) {
+        void sendAppendEntries(long term, int leaderId, long previousLogIndex, long previousLogTerm, Transaction[] entries, long leaderCommit) {
             messageHeaderEncoder.wrap(buffer, 0)
                                 .blockLength(AppendEntriesEncoder.BLOCK_LENGTH)
                                 .templateId(AppendEntriesEncoder.TEMPLATE_ID)
@@ -385,8 +454,8 @@ class Server  {
                                 .prevLogTerm(previousLogTerm)
                                 .leaderCommit(leaderCommit);
             AppendEntriesEncoder.EntriesEncoder entriesEncoder = appendEntriesEncoder.entriesCount(entries.length);
-            for (String entry : entries) {
-                entriesEncoder.entry(entry);
+            for (Transaction entry : entries) {
+                entriesEncoder.amount(entry.amount).creditAccount(entry.creditAccount).debitAccount(entry.debitAccount);
             }
 
             sendAll(messageHeaderEncoder.encodedLength() + appendEntriesEncoder.encodedLength());
@@ -424,6 +493,32 @@ class Server  {
             return publications[id - 1];
         }
 
+    }
+
+    private class ClientSender {
+        final Publication clientPublication;
+        final UnsafeBuffer buffer;
+        final MessageHeaderEncoder messageHeaderEncoder = new MessageHeaderEncoder();
+        final ClientResponseEncoder clientResponseEncoder = new ClientResponseEncoder();
+        final BalanceResponseEncoder balanceResponseEncoder = new BalanceResponseEncoder();
+        final TransactionResponseEncoder transactionResponseEncoder = new TransactionResponseEncoder();
+
+        ClientSender(Aeron aeron, String clientChannel) {
+            clientPublication = aeron.addPublication(clientChannel, settings.clientStreamId);
+            buffer = new UnsafeBuffer(ByteBuffer.allocateDirect(256));
+        }
+
+        void sendClientResponse(int leaderId) {
+            messageHeaderEncoder.wrap(buffer, 0)
+                                .blockLength(ClientResponseEncoder.BLOCK_LENGTH)
+                                .templateId(ClientResponseEncoder.TEMPLATE_ID)
+                                .schemaId(ClientResponseEncoder.SCHEMA_ID)
+                                .version(ClientResponseEncoder.SCHEMA_VERSION);
+        }
+    }
+
+    private class Transaction {
+        long creditAccount, debitAccount, amount;
     }
 
     private long methodEntry;
@@ -471,5 +566,4 @@ class Server  {
             logger.warn(message, params);
         }
     }
-
 }

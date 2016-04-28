@@ -19,8 +19,10 @@ class Settings {
     final long electionTimeout = 15000 + new Random().nextInt(15000);
     final int clusterSize = 5;
     final String channelPrefix = "udp://localhost:400";
+    final String clientChannelPrefix = "udp://localhost:5000";
     final IdleStrategy idleStrategy = new SleepingIdleStrategy(TimeUnit.MILLISECONDS.toNanos(1));
     final TimerWheel timerWheel = new TimerWheel(500, TimeUnit.MILLISECONDS, 512);
+    final int clientStreamId = 42;
 
     final int id;
 
